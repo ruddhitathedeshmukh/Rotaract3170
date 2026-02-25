@@ -1,8 +1,18 @@
 
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { User, Club, ClubMetrics, Member } from './types';
 import Reporting from './Reporting';
 import Resources from './Resources';
+import { DistrictAPI } from './api';
+
+interface Notification {
+  id: string;
+  title: string;
+  message: string;
+  type: string;
+  isRead: boolean;
+  createdAt: string;
+}
 
 const LOGO_PLACEHOLDER = `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 24 24" fill="none" stroke="%23cbd5e1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M3 7v1a3 3 0 0 0 6 0V7m0 1a3 3 0 0 0 6 0V7m0 1a3 3 0 0 0 6 0V7m0 1a3 3 0 0 0 6 0V7H3l2-4h14l2 4"/><path d="M5 21V10.85"/><path d="M19 21V10.85"/><path d="M9 21v-4a3 3 0 0 1 6 0v4"/></svg>')}`;
 const OFFICER_PLACEHOLDER = `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 24 24" fill="none" stroke="%23cbd5e1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>')}`;
@@ -74,6 +84,10 @@ const ClubDashboard: React.FC<ClubDashboardProps> = ({ user, onLogout, onUpdateM
   const [designationFilter, setDesignationFilter] = useState('All');
   const [duesFilter, setDuesFilter] = useState<'All' | 'Paid' | 'Pending'>('All');
   
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+  
   const DISTRICT_DUES_RATE = 100;
 
   const initialMemberState: Partial<Member> = {
@@ -83,6 +97,35 @@ const ClubDashboard: React.FC<ClubDashboardProps> = ({ user, onLogout, onUpdateM
   };
 
   const [newMember, setNewMember] = useState<Partial<Member>>(initialMemberState);
+  
+  // Load notifications on mount and periodically
+  useEffect(() => {
+    if (club?.id) {
+      loadNotifications();
+      const interval = setInterval(loadNotifications, 30000); // Refresh every 30 seconds
+      return () => clearInterval(interval);
+    }
+  }, [club?.id]);
+
+  const loadNotifications = async () => {
+    if (!club?.id) return;
+    try {
+      const notifs = await DistrictAPI.getNotifications(club.id);
+      setNotifications(notifs);
+      setUnreadCount(notifs.filter((n: Notification) => !n.isRead).length);
+    } catch (error) {
+      console.error('Failed to load notifications:', error);
+    }
+  };
+
+  const handleMarkAsRead = async (notificationId: string) => {
+    try {
+      await DistrictAPI.markNotificationAsRead(notificationId);
+      await loadNotifications();
+    } catch (error) {
+      console.error('Failed to mark notification as read:', error);
+    }
+  };
   
   if (!club) return <div className="p-10 text-center text-slate-500 font-bold">Session Error: Club data not found.</div>;
 
@@ -361,7 +404,7 @@ const ClubDashboard: React.FC<ClubDashboardProps> = ({ user, onLogout, onUpdateM
     { label: 'Community Capital', value: `₹${(club.metrics?.communityCapital || '0')}`, color: 'text-emerald-600', bg: 'bg-emerald-50', icon: '₹' },
     { label: 'Service Hours', value: club.metrics?.serviceHours || '0', color: 'text-blue-600', bg: 'bg-blue-50', icon: 'H' },
     { label: 'Lives Touched', value: club.metrics?.livesTouched || '0', color: 'text-[#D91B5C]', bg: 'bg-pink-50', icon: 'L' },
-    { label: 'Rotaracters', value: memberStats.strengthExclRCC, color: 'text-orange-600', bg: 'bg-orange-50', icon: 'R' },
+    { label: 'Rotaractors', value: memberStats.strengthExclRCC, color: 'text-orange-600', bg: 'bg-orange-50', icon: 'R' },
     { label: 'Total Points', value: (Number(club.metrics?.totalPoints || '0') + memberStats.pointsEarned).toString(), color: 'text-indigo-600', bg: 'bg-indigo-50', icon: 'P' }
   ];
 
@@ -383,10 +426,66 @@ const ClubDashboard: React.FC<ClubDashboardProps> = ({ user, onLogout, onUpdateM
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Club Portal</p>
           </div>
         </div>
-        <button onClick={onLogout} className="flex items-center gap-2 text-pink-600 font-bold hover:text-red-700 transition-colors uppercase tracking-widest text-xs">
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
-          <span className="hidden sm:inline">Logout</span>
-        </button>
+        <div className="flex items-center gap-4">
+          <div className="relative">
+            <button
+              onClick={() => setShowNotifications(!showNotifications)}
+              className="relative p-2 text-slate-600 hover:text-[#D91B5C] transition-colors rounded-xl hover:bg-slate-50"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+              </svg>
+              {unreadCount > 0 && (
+                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-black rounded-full w-5 h-5 flex items-center justify-center">
+                  {unreadCount}
+                </span>
+              )}
+            </button>
+            
+            {showNotifications && (
+              <div className="absolute right-0 mt-2 w-96 bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden z-50">
+                <div className="bg-slate-50 px-6 py-4 border-b border-slate-100">
+                  <h3 className="font-black text-slate-900">Notifications</h3>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
+                    {unreadCount} unread
+                  </p>
+                </div>
+                <div className="max-h-96 overflow-y-auto">
+                  {notifications.length > 0 ? (
+                    notifications.map((notif) => (
+                      <div
+                        key={notif.id}
+                        className={`p-4 border-b border-slate-50 hover:bg-slate-50 transition-colors cursor-pointer ${!notif.isRead ? 'bg-blue-50/30' : ''}`}
+                        onClick={() => handleMarkAsRead(notif.id)}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1">
+                            <h4 className="font-black text-sm text-slate-900">{notif.title}</h4>
+                            <p className="text-xs text-slate-600 mt-1">{notif.message}</p>
+                            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-2">
+                              {new Date(notif.createdAt).toLocaleDateString()}
+                            </p>
+                          </div>
+                          {!notif.isRead && (
+                            <div className="w-2 h-2 bg-blue-500 rounded-full mt-1"></div>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="p-8 text-center">
+                      <p className="text-slate-400 font-bold text-sm">No notifications</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+          <button onClick={onLogout} className="flex items-center gap-2 text-pink-600 font-bold hover:text-red-700 transition-colors uppercase tracking-widest text-xs">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+            <span className="hidden sm:inline">Logout</span>
+          </button>
+        </div>
       </nav>
 
       <main className="max-w-7xl mx-auto px-6 py-8">
@@ -681,10 +780,11 @@ const ClubDashboard: React.FC<ClubDashboardProps> = ({ user, onLogout, onUpdateM
         )}
 
         {activeView === 'reporting' && (
-          <Reporting 
-            metrics={club.metrics} 
-            onUpdateMetrics={onUpdateMetrics} 
-            pointsEarned={memberStats.pointsEarned} 
+          <Reporting
+            metrics={club.metrics}
+            onUpdateMetrics={onUpdateMetrics}
+            pointsEarned={memberStats.pointsEarned}
+            clubId={club.id}
           />
         )}
 

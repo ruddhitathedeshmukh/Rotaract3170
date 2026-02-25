@@ -1,6 +1,23 @@
 
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { User, Club, ClubOfficers, Officer, Member, Invoice } from './types';
+
+type Meeting = {
+  id: string;
+  clubId: string;
+  clubName: string;
+  meetingType: 'GBM' | 'BOD';
+  meetingNumber: string;
+  date: string;
+  venue: string;
+  briefInfo: string;
+  totalAttendance: number;
+  points: number;
+  month: string;
+  year: number;
+  submittedAt: string;
+  photos?: string[];
+};
 
 const LOGO_PLACEHOLDER = `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 24 24" fill="none" stroke="%23cbd5e1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M3 7v1a3 3 0 0 0 6 0V7m0 1a3 3 0 0 0 6 0V7m0 1a3 3 0 0 0 6 0V7H3l2-4h14l2 4"/><path d="M5 21V10.85"/><path d="M19 21V10.85"/><path d="M9 21v-4a3 3 0 0 1 6 0v4"/></svg>')}`;
 
@@ -55,6 +72,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, clubs, onAddClub,
   const [modalTab, setModalTab] = useState<'details' | 'roster' | 'invoices'>('details');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const rosterFileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Meeting approval states
+  const [pendingMeetings, setPendingMeetings] = useState<Meeting[]>([]);
+  const [showMeetingsPanel, setShowMeetingsPanel] = useState(false);
+  const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
+  const [rejectionReason, setRejectionReason] = useState('');
   
   const initialFormState: Partial<Club> = {
     name: '', username: '', password: '', zone: 'Zone 1',
@@ -290,6 +313,70 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, clubs, onAddClub,
     e.target.value = '';
   };
 
+  // Fetch pending meetings
+  useEffect(() => {
+    const fetchPendingMeetings = async () => {
+      try {
+        const response = await fetch('http://localhost:8000/api/meetings/pending/');
+        if (response.ok) {
+          const data = await response.json();
+          setPendingMeetings(data);
+        }
+      } catch (error) {
+        console.error('Error fetching pending meetings:', error);
+      }
+    };
+    
+    fetchPendingMeetings();
+    // Refresh every 30 seconds
+    const interval = setInterval(fetchPendingMeetings, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleApproveMeeting = async (meetingId: string) => {
+    try {
+      const response = await fetch(`http://localhost:8000/api/meetings/${meetingId}/approve/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ approvedBy: 'admin' })
+      });
+      
+      if (response.ok) {
+        setPendingMeetings(pendingMeetings.filter(m => m.id !== meetingId));
+        setSelectedMeeting(null);
+        alert('Meeting approved successfully! Points have been added to the club.');
+      }
+    } catch (error) {
+      console.error('Error approving meeting:', error);
+      alert('Failed to approve meeting');
+    }
+  };
+
+  const handleRejectMeeting = async (meetingId: string) => {
+    if (!rejectionReason.trim()) {
+      alert('Please provide a rejection reason');
+      return;
+    }
+    
+    try {
+      const response = await fetch(`http://localhost:8000/api/meetings/${meetingId}/reject/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: rejectionReason })
+      });
+      
+      if (response.ok) {
+        setPendingMeetings(pendingMeetings.filter(m => m.id !== meetingId));
+        setSelectedMeeting(null);
+        setRejectionReason('');
+        alert('Meeting rejected. Club has been notified.');
+      }
+    } catch (error) {
+      console.error('Error rejecting meeting:', error);
+      alert('Failed to reject meeting');
+    }
+  };
+
   return (
     <div className="flex flex-col h-screen bg-slate-50">
       <header className="bg-white border-b px-8 py-4 flex items-center justify-between shadow-sm z-10 sticky top-0">
@@ -312,6 +399,17 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, clubs, onAddClub,
             </button>
             <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept=".csv" />
           </div>
+          <button
+            onClick={() => setShowMeetingsPanel(!showMeetingsPanel)}
+            className="relative bg-emerald-600 text-white px-6 py-2.5 rounded-xl text-[10px] uppercase font-black shadow-lg shadow-emerald-200 hover:scale-105 transition-all"
+          >
+            Pending Meetings
+            {pendingMeetings.length > 0 && (
+              <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[8px] font-black rounded-full w-5 h-5 flex items-center justify-center">
+                {pendingMeetings.length}
+              </span>
+            )}
+          </button>
           <button onClick={openCreateModal} className="bg-[#D91B5C] text-white px-6 py-2.5 rounded-xl text-[10px] uppercase font-black shadow-lg shadow-pink-200 hover:scale-105 transition-all">New Club</button>
           <div className="h-6 w-px bg-slate-200"></div>
           <button onClick={onLogout} className="text-slate-400 font-bold uppercase text-[10px] tracking-widest hover:text-red-600 transition-colors">Logout</button>
@@ -514,6 +612,175 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, clubs, onAddClub,
             <div className="px-10 py-8 bg-white border-t flex gap-4">
               <button onClick={() => setIsModalOpen(false)} className="flex-1 py-4.5 bg-slate-100 text-slate-500 font-black rounded-[1.5rem] uppercase text-[10px] tracking-widest">Discard Changes</button>
               <button form="clubForm" type="submit" onClick={(e) => { if(modalTab !== 'details') handleSubmit(e as any) }} className="flex-[2] py-4.5 bg-[#D91B5C] text-white font-black rounded-[1.5rem] uppercase text-[10px] tracking-widest shadow-xl">Apply Master Updates</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Pending Meetings Panel */}
+      {showMeetingsPanel && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white w-full max-w-6xl rounded-[3.5rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="px-10 py-8 bg-emerald-50 border-b flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-black text-slate-900 leading-none">Pending Meeting Approvals</h2>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-2">
+                  {pendingMeetings.length} meeting{pendingMeetings.length !== 1 ? 's' : ''} awaiting review
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowMeetingsPanel(false);
+                  setSelectedMeeting(null);
+                  setRejectionReason('');
+                }}
+                className="text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-10">
+              {pendingMeetings.length === 0 ? (
+                <div className="text-center py-20">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-20 w-20 mx-auto text-slate-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <p className="text-slate-400 font-bold text-lg">No pending meetings</p>
+                  <p className="text-sm text-slate-400 mt-2">All meetings have been reviewed</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-6">
+                  {pendingMeetings.map((meeting) => (
+                    <div key={meeting.id} className="bg-slate-50 p-8 rounded-[2.5rem] border border-slate-200 hover:shadow-lg transition-all">
+                      <div className="flex items-start justify-between mb-6">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <h3 className="text-xl font-black text-slate-900">{meeting.clubName}</h3>
+                            <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${
+                              meeting.meetingType === 'GBM' 
+                                ? 'bg-blue-100 text-blue-700' 
+                                : 'bg-purple-100 text-purple-700'
+                            }`}>
+                              {meeting.meetingType === 'GBM' ? 'General Body Meeting' : 'Board Of Directors'}
+                            </span>
+                          </div>
+                          <p className="text-sm text-slate-500 font-bold">
+                            {meeting.meetingNumber} • {new Date(meeting.date).toLocaleDateString('en-GB', { 
+                              day: '2-digit', 
+                              month: 'short', 
+                              year: 'numeric' 
+                            })}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-3xl font-black text-emerald-600">{meeting.points}</div>
+                          <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Claimed Points</div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4 mb-6">
+                        <div className="bg-white p-4 rounded-2xl border border-slate-200">
+                          <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Venue</div>
+                          <div className="text-sm font-bold text-slate-700">{meeting.venue}</div>
+                        </div>
+                        <div className="bg-white p-4 rounded-2xl border border-slate-200">
+                          <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Attendance</div>
+                          <div className="text-sm font-bold text-slate-700">{meeting.totalAttendance} members</div>
+                        </div>
+                      </div>
+
+                      <div className="bg-white p-4 rounded-2xl border border-slate-200 mb-6">
+                        <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Meeting Information</div>
+                        <p className="text-sm text-slate-600 leading-relaxed">{meeting.briefInfo}</p>
+                      </div>
+
+                      {meeting.photos && meeting.photos.length > 0 && (
+                        <div className="bg-white p-4 rounded-2xl border border-slate-200 mb-6">
+                          <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">Meeting Photos</div>
+                          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                            {meeting.photos.map((photo: string, index: number) => (
+                              <div key={index} className="aspect-video bg-slate-100 rounded-xl overflow-hidden border border-slate-200">
+                                <img
+                                  src={photo}
+                                  alt={`Meeting photo ${index + 1}`}
+                                  className="w-full h-full object-cover hover:scale-105 transition-transform cursor-pointer"
+                                  onClick={() => window.open(photo, '_blank')}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="bg-white p-4 rounded-2xl border border-slate-200 mb-6">
+                        <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Submitted</div>
+                        <p className="text-xs text-slate-500 font-bold">
+                          {new Date(meeting.submittedAt).toLocaleString('en-GB', {
+                            day: '2-digit',
+                            month: 'short',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </p>
+                      </div>
+
+                      {selectedMeeting?.id === meeting.id ? (
+                        <div className="space-y-4">
+                          <textarea
+                            placeholder="Enter rejection reason (required for rejection)..."
+                            value={rejectionReason}
+                            onChange={(e) => setRejectionReason(e.target.value)}
+                            rows={3}
+                            className="w-full bg-white border border-slate-200 p-4 rounded-2xl outline-none focus:ring-2 focus:ring-red-500/20 font-bold resize-none text-sm"
+                          />
+                          <div className="flex gap-3">
+                            <button
+                              onClick={() => handleApproveMeeting(meeting.id)}
+                              className="flex-1 bg-emerald-600 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg hover:bg-emerald-700 transition-all"
+                            >
+                              ✓ Approve & Add {meeting.points} Points
+                            </button>
+                            <button
+                              onClick={() => handleRejectMeeting(meeting.id)}
+                              className="flex-1 bg-red-600 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg hover:bg-red-700 transition-all"
+                            >
+                              ✗ Reject Meeting
+                            </button>
+                            <button
+                              onClick={() => {
+                                setSelectedMeeting(null);
+                                setRejectionReason('');
+                              }}
+                              className="px-6 bg-slate-200 text-slate-600 py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-300 transition-all"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex gap-3">
+                          <button
+                            onClick={() => handleApproveMeeting(meeting.id)}
+                            className="flex-1 bg-emerald-600 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg hover:bg-emerald-700 transition-all"
+                          >
+                            ✓ Approve Meeting
+                          </button>
+                          <button
+                            onClick={() => setSelectedMeeting(meeting)}
+                            className="flex-1 bg-red-600 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg hover:bg-red-700 transition-all"
+                          >
+                            ✗ Reject Meeting
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>

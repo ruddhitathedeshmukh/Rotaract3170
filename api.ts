@@ -1,37 +1,52 @@
 
 import { Club, User, UserRole, ClubMetrics, Member } from './types';
 
-const STORAGE_KEY = 'rid3170_master_db';
+const API_BASE_URL = 'http://localhost:8000/api';
 
 /**
  * PRODUCTION READY API SERVICE
- * Currently uses localStorage as a "Mock DB engine".
- * To connect to SQL Server, replace these method bodies with fetch('your-api-url/...')
+ * Connects to Django backend API
  */
 export class DistrictAPI {
-  private static async delay(ms: number = 500) {
-    return new Promise(resolve => setTimeout(resolve, ms));
+  // Get CSRF token from cookies
+  private static getCSRFToken(): string {
+    const name = 'csrftoken';
+    let cookieValue = '';
+    if (document.cookie && document.cookie !== '') {
+      const cookies = document.cookie.split(';');
+      for (let i = 0; i < cookies.length; i++) {
+        const cookie = cookies[i].trim();
+        if (cookie.substring(0, name.length + 1) === (name + '=')) {
+          cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+          break;
+        }
+      }
+    }
+    return cookieValue;
   }
 
-  private static async getRawData(): Promise<Club[]> {
-    const data = localStorage.getItem(STORAGE_KEY);
-    return data ? JSON.parse(data) : [];
+  // Get headers with CSRF token for POST/PUT/DELETE requests
+  private static getHeaders(): HeadersInit {
+    return {
+      'Content-Type': 'application/json',
+      'X-CSRFToken': this.getCSRFToken(),
+    };
   }
 
-  private static async saveRawData(data: Club[]): Promise<void> {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  private static async handleResponse(response: Response) {
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Request failed' }));
+      throw new Error(error.error || 'Request failed');
+    }
+    return response.json();
   }
 
   static async getAllClubs(): Promise<Club[]> {
-    await this.delay(300);
-    return await this.getRawData();
+    const response = await fetch(`${API_BASE_URL}/clubs/`);
+    return this.handleResponse(response);
   }
 
   static async saveClub(club: Club): Promise<void> {
-    await this.delay(400);
-    const clubs = await this.getRawData();
-    const index = clubs.findIndex(c => c.id === club.id);
-    
     // Clean metrics before saving to ensure no symbols are stored
     const cleanedClub = {
       ...club,
@@ -42,24 +57,22 @@ export class DistrictAPI {
       }
     };
 
-    if (index > -1) {
-      clubs[index] = cleanedClub;
-    } else {
-      clubs.push(cleanedClub);
-    }
-    await this.saveRawData(clubs);
+    const response = await fetch(`${API_BASE_URL}/clubs/save/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cleanedClub)
+    });
+    await this.handleResponse(response);
   }
 
   static async deleteClub(id: string): Promise<void> {
-    await this.delay(400);
-    const clubs = await this.getRawData();
-    const filtered = clubs.filter(c => c.id !== id);
-    await this.saveRawData(filtered);
+    const response = await fetch(`${API_BASE_URL}/clubs/${id}/`, {
+      method: 'DELETE'
+    });
+    await this.handleResponse(response);
   }
 
   static async bulkAddClubs(newClubs: Club[]): Promise<void> {
-    await this.delay(1000);
-    const clubs = await this.getRawData();
     // Clean all metrics for the new clubs
     const cleanedNewClubs = newClubs.map(c => ({
       ...c,
@@ -68,53 +81,137 @@ export class DistrictAPI {
         communityCapital: c.metrics.communityCapital.replace(/[₹,]/g, ''),
       }
     }));
-    await this.saveRawData([...clubs, ...cleanedNewClubs]);
+
+    const response = await fetch(`${API_BASE_URL}/clubs/bulk-add/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cleanedNewClubs)
+    });
+    await this.handleResponse(response);
   }
 
   static async updateClubMetrics(clubId: string, metrics: ClubMetrics): Promise<void> {
-    await this.delay(400);
-    const clubs = await this.getRawData();
-    const index = clubs.findIndex(c => c.id === clubId);
-    if (index > -1) {
-      // Ensure we only store raw values
-      clubs[index].metrics = {
+    const club = await this.getClubById(clubId);
+    if (club) {
+      club.metrics = {
         ...metrics,
         communityCapital: metrics.communityCapital.replace(/[₹,]/g, ''),
         totalPoints: metrics.totalPoints.replace(/[,]/g, '')
       };
-      await this.saveRawData(clubs);
+      await this.saveClub(club);
     }
   }
 
   static async updateClubMembers(clubId: string, members: Member[]): Promise<void> {
-    await this.delay(500);
-    const clubs = await this.getRawData();
-    const index = clubs.findIndex(c => c.id === clubId);
-    if (index > -1) {
-      clubs[index].members = members;
-      await this.saveRawData(clubs);
+    const club = await this.getClubById(clubId);
+    if (club) {
+      club.members = members;
+      await this.saveClub(club);
     }
   }
 
+  static async getClubById(clubId: string): Promise<Club | null> {
+    const clubs = await this.getAllClubs();
+    return clubs.find(c => c.id === clubId) || null;
+  }
+
   static async login(username: string, password: string): Promise<User | null> {
-    await this.delay(800);
+    const response = await fetch(`${API_BASE_URL}/login/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
     
-    // Admin Check
-    if (username === 'admin' && password === 'admin123') {
-      return { id: 'admin', username: 'admin', role: UserRole.ADMIN };
+    if (!response.ok) {
+      return null;
     }
     
-    // Club Check
-    const clubs = await this.getRawData();
-    const club = clubs.find(c => c.username === username && c.password === password);
-    if (club) {
-      return { 
-        id: club.id, 
-        username: club.username, 
-        role: UserRole.CLUB, 
-        clubData: club 
-      };
-    }
-    return null;
+    const data = await response.json();
+    return {
+      id: data.id,
+      username: data.username,
+      role: data.role as UserRole,
+      clubData: data.clubData
+    };
+  }
+
+  static async getNotifications(clubId: string): Promise<any[]> {
+    const response = await fetch(`${API_BASE_URL}/notifications/${clubId}/`);
+    return this.handleResponse(response);
+  }
+
+  static async markNotificationAsRead(notificationId: string): Promise<void> {
+    const response = await fetch(`${API_BASE_URL}/notifications/${notificationId}/read/`, {
+      method: 'POST'
+    });
+    await this.handleResponse(response);
+  }
+
+  // Meeting API methods
+  static async getMeetings(clubId: string, month?: string, year?: number): Promise<any[]> {
+    let url = `${API_BASE_URL}/meetings/${clubId}/`;
+    const params = new URLSearchParams();
+    if (month) params.append('month', month);
+    if (year) params.append('year', year.toString());
+    if (params.toString()) url += `?${params.toString()}`;
+    
+    const response = await fetch(url);
+    return this.handleResponse(response);
+  }
+
+  static async createMeeting(meetingData: any): Promise<any> {
+    const response = await fetch(`${API_BASE_URL}/meetings/create/`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(meetingData),
+      credentials: 'include'
+    });
+    return this.handleResponse(response);
+  }
+
+  static async updateMeeting(meetingId: string, meetingData: any): Promise<any> {
+    const response = await fetch(`${API_BASE_URL}/meetings/${meetingId}/update/`, {
+      method: 'PUT',
+      headers: this.getHeaders(),
+      body: JSON.stringify(meetingData),
+      credentials: 'include'
+    });
+    return this.handleResponse(response);
+  }
+
+  static async deleteMeeting(meetingId: string): Promise<void> {
+    const response = await fetch(`${API_BASE_URL}/meetings/${meetingId}/delete/`, {
+      method: 'DELETE',
+      headers: this.getHeaders(),
+      credentials: 'include'
+    });
+    await this.handleResponse(response);
+  }
+
+  static async getPendingMeetings(): Promise<any[]> {
+    const response = await fetch(`${API_BASE_URL}/meetings/pending/`, {
+      credentials: 'include'
+    });
+    return this.handleResponse(response);
+  }
+
+  static async approveMeeting(meetingId: string, approvedBy: string): Promise<any> {
+    const response = await fetch(`${API_BASE_URL}/meetings/${meetingId}/approve/`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify({ approvedBy }),
+      credentials: 'include'
+    });
+    return this.handleResponse(response);
+  }
+
+  static async rejectMeeting(meetingId: string, reason: string): Promise<void> {
+    const response = await fetch(`${API_BASE_URL}/meetings/${meetingId}/reject/`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify({ reason }),
+      credentials: 'include'
+    });
+    await this.handleResponse(response);
   }
 }
