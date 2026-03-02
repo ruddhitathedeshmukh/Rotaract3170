@@ -3,6 +3,10 @@ import { ClubMetrics } from './types';
 import { DistrictAPI } from './api';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import ClubServiceForm from './ClubServiceForm';
+import CommunityServiceForm from './CommunityServiceForm';
+import ProfessionalServiceForm from './ProfessionalServiceForm';
+import DMOForm from './DMOForm';
 
 interface ReportingProps {
   metrics: ClubMetrics;
@@ -36,6 +40,716 @@ interface MeetingReportsTabProps {
   clubId: string;
 }
 
+interface ProjectReportsTabProps {
+  selectedMonth: MonthData;
+  clubId: string;
+}
+
+type ProjectCategory = 
+  | 'Club Service Avenue'
+  | 'Community Service Avenue'
+  | 'International Service Avenue'
+  | 'Professional Service Avenue'
+  | 'District & Zonal Engagement'
+  | 'Designated Monthly Observation';
+
+type Project = {
+  id: number;
+  projectName: string;
+  category: ProjectCategory;
+  date: string;
+  venue: string;
+  projectChair: string;
+  description: string;
+  totalAttendance: number;
+  totalPoints: number;
+  status: 'pending' | 'approved' | 'rejected';
+  submittedAt: string;
+  photos?: any[];
+  attendance?: any;
+  additionalPoints?: any;
+};
+
+const ProjectReportsTab: React.FC<ProjectReportsTabProps> = ({ selectedMonth, clubId }) => {
+  const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<ProjectCategory | null>(null);
+  const [showForm, setShowForm] = useState(false);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [viewingProject, setViewingProject] = useState<Project | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Load projects from API when component mounts or month changes
+  useEffect(() => {
+    const loadProjects = async () => {
+      setIsLoading(true);
+      try {
+        const data = await DistrictAPI.getProjects(clubId, selectedMonth.name, selectedMonth.year);
+        setProjects(data);
+      } catch (error) {
+        console.error('Error loading projects:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadProjects();
+  }, [clubId, selectedMonth.name, selectedMonth.year]);
+
+  const categories: ProjectCategory[] = [
+    'Club Service Avenue',
+    'Community Service Avenue',
+    'International Service Avenue',
+    'Professional Service Avenue',
+    'District & Zonal Engagement',
+    'Designated Monthly Observation'
+  ];
+
+  const handleCategorySelect = (category: ProjectCategory) => {
+    setSelectedCategory(category);
+    setShowCategoryDropdown(false);
+    setShowForm(true);
+  };
+
+  const handleBackToCategories = () => {
+    setShowForm(false);
+    setSelectedCategory(null);
+    setShowCategoryDropdown(true);
+  };
+
+  const handleFormSubmit = async (projectData: any) => {
+    setIsLoading(true);
+    try {
+      const submissionData = {
+        clubId: clubId,
+        projectName: projectData.projectName,
+        category: selectedCategory === 'Club Service Avenue' ? 'club_service' :
+                 selectedCategory === 'Community Service Avenue' ? 'community_service' :
+                 selectedCategory === 'Professional Service Avenue' ? 'professional_service' :
+                 selectedCategory === 'Designated Monthly Observation' ? 'dmo' :
+                 selectedCategory!.toLowerCase().replace(/ /g, '_'),
+        date: projectData.date,
+        venue: projectData.venue,
+        projectChair: projectData.projectChair,
+        description: projectData.description,
+        // Community Service and Professional Service specific fields
+        communityCapitalDeployed: projectData.communityCapitalDeployed || '0',
+        livesTouched: projectData.livesTouched || 0,
+        serviceHours: projectData.serviceHours || 0,
+        // Attendance
+        attendance: projectData.attendance,
+        totalAttendance: projectData.totalAttendance,
+        // News coverage
+        newsPublicationEnabled: projectData.newsPublicationEnabled || false,
+        newsPublicationImage: projectData.newsPublicationImage || '',
+        newsPublicationLink: projectData.newsPublicationLink || '',
+        newsTelecastingEnabled: projectData.newsTelecastingEnabled || false,
+        newsTelecastingLink: projectData.newsTelecastingLink || '',
+        // Women empowerment
+        womenEmpowerment: projectData.womenEmpowerment || false,
+        // Professional Service specific fields
+        mahadhanProject: projectData.mahadhanProject || false,
+        generalPublicAttendance: projectData.generalPublicAttendance || '',
+        // DMO specific fields
+        organizingClubService: projectData.organizingClubService || false,
+        organizingCommunityService: projectData.organizingCommunityService || false,
+        organizingProfessionalService: projectData.organizingProfessionalService || false,
+        organizingInternationalService: projectData.organizingInternationalService || false,
+        // Points breakdown
+        attendancePoints: projectData.attendancePoints || 0,
+        newsPoints: projectData.newsPoints || 0,
+        womenEmpowermentPoints: projectData.womenEmpowermentPoints || 0,
+        mahadhanPoints: projectData.mahadhanPoints || 0,
+        generalPublicPoints: projectData.generalPublicPoints || 0,
+        categoryPoints: projectData.categoryPoints || 0,
+        // Points and photos
+        points: projectData.totalPoints,
+        photos: projectData.photos,
+        additionalPoints: projectData.additionalPoints,
+        additionalPointsValue: projectData.additionalPointsValue || 0,
+        // Metadata
+        month: selectedMonth.name,
+        year: selectedMonth.year,
+      };
+
+      await DistrictAPI.createProject(submissionData);
+      alert('Project submitted successfully! Awaiting admin approval.');
+      
+      // Reload projects from API
+      const data = await DistrictAPI.getProjects(clubId, selectedMonth.name, selectedMonth.year);
+      setProjects(data);
+      
+      setShowForm(false);
+      setSelectedCategory(null);
+    } catch (error) {
+      console.error('Error saving project:', error);
+      alert('Failed to save project. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDeleteProject = async (id: number) => {
+    if (confirm('Are you sure you want to delete this project?')) {
+      setIsLoading(true);
+      try {
+        await DistrictAPI.deleteProject(id.toString());
+        setProjects(projects.filter(p => p.id !== id));
+        alert('Project deleted successfully');
+      } catch (error) {
+        console.error('Error deleting project:', error);
+        alert('Failed to delete project. Please try again.');
+      } finally {
+        setIsLoading(false);
+      }
+    }
+  };
+
+  const handleEditProject = (project: Project) => {
+    // TODO: Implement edit functionality
+    alert('Edit functionality coming soon');
+  };
+
+  const renderCategoryForm = () => {
+    if (!selectedCategory) return null;
+
+    // Use ClubServiceForm for Club Service Avenue
+    if (selectedCategory === 'Club Service Avenue') {
+      return <ClubServiceForm selectedMonth={selectedMonth} onBack={handleBackToCategories} onSubmit={handleFormSubmit} />;
+    }
+
+    // Use CommunityServiceForm for Community Service Avenue
+    if (selectedCategory === 'Community Service Avenue') {
+      return <CommunityServiceForm selectedMonth={selectedMonth} onBack={handleBackToCategories} onSubmit={handleFormSubmit} />;
+    }
+
+    // Use ProfessionalServiceForm for Professional Service Avenue
+    if (selectedCategory === 'Professional Service Avenue') {
+      return <ProfessionalServiceForm selectedMonth={selectedMonth} onBack={handleBackToCategories} onSubmit={handleFormSubmit} />;
+    }
+
+    // Use DMOForm for Designated Monthly Observation
+    if (selectedCategory === 'Designated Monthly Observation') {
+      return <DMOForm selectedMonth={selectedMonth} onBack={handleBackToCategories} onSubmit={handleFormSubmit} />;
+    }
+
+    // Generic form for other categories (to be customized later)
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <button
+              onClick={handleBackToCategories}
+              className="flex items-center gap-2 text-slate-600 hover:text-[#D91B5C] transition-colors mb-4"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
+              </svg>
+              <span className="font-black text-sm uppercase tracking-widest">Back to Categories</span>
+            </button>
+            <h3 className="text-2xl font-black text-slate-900">{selectedCategory}</h3>
+            <p className="text-sm text-slate-500 mt-1">Submit project details for this category</p>
+          </div>
+        </div>
+
+        <div className="bg-blue-50 p-8 rounded-2xl border border-blue-200 text-center">
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mx-auto text-blue-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+          </svg>
+          <h4 className="text-lg font-black text-slate-900 mb-2">Form Coming Soon</h4>
+          <p className="text-sm text-slate-600">
+            The form for {selectedCategory} is currently under development.
+          </p>
+        </div>
+      </div>
+    );
+  };
+
+  if (showForm && selectedCategory) {
+    return renderCategoryForm();
+  }
+
+  if (showCategoryDropdown) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-2xl font-black text-slate-900">Select Project Category</h3>
+            <p className="text-sm text-slate-500 mt-1">Choose the avenue of service for your project</p>
+          </div>
+          <button
+            onClick={() => setShowCategoryDropdown(false)}
+            className="text-slate-600 hover:text-[#D91B5C] transition-colors"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {categories.map((category, index) => (
+            <button
+              key={index}
+              onClick={() => handleCategorySelect(category)}
+              className="p-6 bg-gradient-to-br from-slate-50 to-white border-2 border-slate-200 rounded-2xl hover:border-[#D91B5C] hover:shadow-lg transition-all text-left group"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-lg font-black text-slate-900 group-hover:text-[#D91B5C] transition-colors">
+                    {category}
+                  </h4>
+                  <p className="text-xs text-slate-500 mt-1 font-bold uppercase tracking-widest">
+                    Click to add project
+                  </p>
+                </div>
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-slate-400 group-hover:text-[#D91B5C] transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+                </svg>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // Sort projects by date (latest first)
+  const sortedProjects = [...projects].sort((a, b) =>
+    new Date(b.date).getTime() - new Date(a.date).getTime()
+  );
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-2xl font-black text-slate-900">
+          Project Reports - {selectedMonth.name} {selectedMonth.year}
+        </h3>
+        <p className="text-sm font-bold text-slate-600 mt-1 uppercase tracking-widest">
+          Submit Projects Across Different Avenues
+        </p>
+        <p className="text-sm text-slate-500 mt-2">
+          Add, view and manage all projects conducted during this month
+        </p>
+      </div>
+
+      <button
+        onClick={() => setShowCategoryDropdown(true)}
+        className="w-full bg-[#D91B5C] text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg hover:scale-[1.01] transition-all flex items-center justify-center gap-2"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
+        </svg>
+        Add Project
+      </button>
+
+      {sortedProjects.length > 0 ? (
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="bg-slate-50 border-b-2 border-slate-200">
+                <th className="text-left p-4 text-xs font-black text-slate-700 uppercase tracking-widest">Sr. No.</th>
+                <th className="text-left p-4 text-xs font-black text-slate-700 uppercase tracking-widest">Project Name</th>
+                <th className="text-left p-4 text-xs font-black text-slate-700 uppercase tracking-widest">Category</th>
+                <th className="text-left p-4 text-xs font-black text-slate-700 uppercase tracking-widest">Date</th>
+                <th className="text-left p-4 text-xs font-black text-slate-700 uppercase tracking-widest">Attendance</th>
+                <th className="text-left p-4 text-xs font-black text-slate-700 uppercase tracking-widest">Points</th>
+                <th className="text-left p-4 text-xs font-black text-slate-700 uppercase tracking-widest">Status</th>
+                <th className="text-left p-4 text-xs font-black text-slate-700 uppercase tracking-widest">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedProjects.map((project, index) => (
+                <tr key={project.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
+                  <td className="p-4 font-bold text-slate-700">{index + 1}</td>
+                  <td className="p-4 font-bold text-slate-700">{project.projectName}</td>
+                  <td className="p-4">
+                    <span className="inline-block px-3 py-1 rounded-full text-xs font-black uppercase tracking-widest bg-pink-100 text-pink-700">
+                      {project.category}
+                    </span>
+                  </td>
+                  <td className="p-4 font-bold text-slate-700">
+                    {new Date(project.date).toLocaleDateString('en-GB', {
+                      day: '2-digit',
+                      month: 'short',
+                      year: 'numeric'
+                    })}
+                  </td>
+                  <td className="p-4 font-bold text-slate-700">{project.totalAttendance}</td>
+                  <td className="p-4 font-bold">
+                    {project.status === 'pending' ? (
+                      <span className="text-orange-600 font-black uppercase text-xs">Pending</span>
+                    ) : project.status === 'approved' ? (
+                      <span className="text-emerald-600 font-black">{project.totalPoints}</span>
+                    ) : (
+                      <span className="text-red-600 font-black uppercase text-xs">Rejected</span>
+                    )}
+                  </td>
+                  <td className="p-4">
+                    <span className={`inline-block px-3 py-1 rounded-full text-xs font-black uppercase tracking-widest ${
+                      project.status === 'pending' ? 'bg-orange-100 text-orange-700' :
+                      project.status === 'approved' ? 'bg-emerald-100 text-emerald-700' :
+                      'bg-red-100 text-red-700'
+                    }`}>
+                      {project.status}
+                    </span>
+                  </td>
+                  <td className="p-4">
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setViewingProject(project)}
+                        className="p-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors"
+                        title="View"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                        </svg>
+                      </button>
+                      <button
+                        disabled={project.status === 'approved'}
+                        onClick={() => handleEditProject(project)}
+                        className={`p-2 rounded-lg transition-colors ${project.status === 'approved' ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-orange-100 text-orange-700 hover:bg-orange-200'}`}
+                        title={project.status === 'approved' ? 'Cannot edit approved project' : 'Edit'}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
+                      </button>
+                      <button
+                        disabled={project.status === 'approved'}
+                        onClick={() => handleDeleteProject(project.id)}
+                        className={`p-2 rounded-lg transition-colors ${project.status === 'approved' ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-red-100 text-red-700 hover:bg-red-200'}`}
+                        title={project.status === 'approved' ? 'Cannot delete approved project' : 'Delete'}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="text-center py-12 bg-slate-50 rounded-2xl border border-slate-200">
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mx-auto text-slate-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          <p className="text-slate-400 font-bold">No projects added yet</p>
+          <p className="text-sm text-slate-400 mt-1">Click "Add Project" to create your first project report</p>
+        </div>
+      )}
+
+      {/* View Project Modal */}
+      {viewingProject && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-6 z-50">
+          <div className="bg-white w-full max-w-4xl rounded-[3rem] p-10 max-h-[90vh] overflow-y-auto shadow-2xl">
+            <div className="flex items-center justify-between mb-8">
+              <h2 className="text-2xl font-black text-slate-900">Project Details</h2>
+              <button
+                onClick={() => setViewingProject(null)}
+                className="text-slate-600 hover:text-[#D91B5C] transition-colors"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="space-y-6">
+              <div className="grid grid-cols-2 gap-6">
+                <div className="bg-slate-50 p-6 rounded-2xl">
+                  <div className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Project Name</div>
+                  <div className="text-lg font-black text-slate-900">{viewingProject.projectName}</div>
+                </div>
+                <div className="bg-slate-50 p-6 rounded-2xl">
+                  <div className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Category</div>
+                  <div className="text-lg font-black text-slate-900">{viewingProject.category}</div>
+                </div>
+                <div className="bg-slate-50 p-6 rounded-2xl">
+                  <div className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Date</div>
+                  <div className="text-lg font-black text-slate-900">
+                    {new Date(viewingProject.date).toLocaleDateString('en-GB', {
+                      day: '2-digit',
+                      month: 'short',
+                      year: 'numeric'
+                    })}
+                  </div>
+                </div>
+                <div className="bg-slate-50 p-6 rounded-2xl">
+                  <div className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Venue</div>
+                  <div className="text-lg font-black text-slate-900">{viewingProject.venue}</div>
+                </div>
+                <div className="bg-slate-50 p-6 rounded-2xl">
+                  <div className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Project Chair</div>
+                  <div className="text-lg font-black text-slate-900">{viewingProject.projectChair}</div>
+                </div>
+                <div className="bg-slate-50 p-6 rounded-2xl">
+                  <div className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Total Attendance</div>
+                  <div className="text-lg font-black text-slate-900">{viewingProject.totalAttendance}</div>
+                </div>
+              </div>
+
+              {/* Community Service and Professional Service Specific Fields */}
+              {(viewingProject.category === 'Community Service Avenue' || viewingProject.category === 'community_service' || viewingProject.category === 'Professional Service Avenue' || viewingProject.category === 'professional_service') && (viewingProject as any).communityCapitalDeployed && (
+                <div className="bg-blue-50 p-6 rounded-2xl border border-blue-200">
+                  <div className="text-xs font-black text-blue-700 uppercase tracking-widest mb-4">
+                    {(viewingProject.category === 'Professional Service Avenue' || viewingProject.category === 'professional_service') ? 'Professional Service Metrics' : 'Community Service Metrics'}
+                  </div>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div>
+                      <div className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Community Capital</div>
+                      <div className="text-xl font-black text-blue-700">₹{(viewingProject as any).communityCapitalDeployed}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Lives Touched</div>
+                      <div className="text-xl font-black text-blue-700">{(viewingProject as any).livesTouched}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Service Hours</div>
+                      <div className="text-xl font-black text-blue-700">{(viewingProject as any).serviceHours}</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Attendance Breakdown */}
+              {viewingProject.attendance && (
+                <div className="bg-slate-50 p-6 rounded-2xl">
+                  <div className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Attendance Breakdown</div>
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                    <div>
+                      <div className="text-xs text-slate-500 mb-1">Club Rotaractors</div>
+                      <div className="text-lg font-black text-slate-900">{viewingProject.attendance.clubRotaractors}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-slate-500 mb-1">Visiting Rotaractors</div>
+                      <div className="text-lg font-black text-slate-900">{viewingProject.attendance.visitingRotaractors}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-slate-500 mb-1">Rotarians</div>
+                      <div className="text-lg font-black text-slate-900">{viewingProject.attendance.rotarians}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-slate-500 mb-1">Interactors</div>
+                      <div className="text-lg font-black text-slate-900">{viewingProject.attendance.interactors}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-slate-500 mb-1">Others</div>
+                      <div className="text-lg font-black text-slate-900">{viewingProject.attendance.others}</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* News Coverage */}
+              {(viewingProject.category === 'Community Service Avenue' || viewingProject.category === 'community_service' || viewingProject.category === 'Professional Service Avenue' || viewingProject.category === 'professional_service') && (
+                (viewingProject as any).newsPublicationEnabled ||
+                (viewingProject as any).newsTelecastingEnabled ||
+                (viewingProject as any).newsPublicationLink ||
+                (viewingProject as any).newsPublicationImage ||
+                (viewingProject as any).newsTelecastingLink
+              ) && (
+                <div className="bg-purple-50 p-6 rounded-2xl border border-purple-200">
+                  <div className="text-xs font-black text-purple-700 uppercase tracking-widest mb-4">News Coverage</div>
+                  <div className="space-y-4">
+                    {(viewingProject as any).newsPublicationEnabled && (
+                      <div className="bg-white p-4 rounded-xl border border-purple-200">
+                        <div className="flex items-start gap-3 mb-3">
+                          <div className="w-2 h-2 bg-purple-600 rounded-full mt-2"></div>
+                          <div className="flex-1">
+                            <div className="text-sm font-bold text-slate-700 mb-1">News Publication (+100 points)</div>
+                            {(viewingProject as any).newsPublicationLink && (
+                              <a href={(viewingProject as any).newsPublicationLink} target="_blank" rel="noopener noreferrer" className="text-xs text-purple-600 hover:underline flex items-center gap-1">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                </svg>
+                                View News Article Link
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                        {(viewingProject as any).newsPublicationImage && (viewingProject as any).newsPublicationImage.trim() !== '' && (
+                          <div className="mt-3">
+                            <div className="text-xs text-slate-500 mb-2">News Article Image:</div>
+                            <div className="bg-slate-100 rounded-lg overflow-hidden border border-slate-200">
+                              <img
+                                src={(viewingProject as any).newsPublicationImage}
+                                alt="News Publication"
+                                className="w-full h-auto max-h-64 object-contain cursor-zoom-in"
+                                onClick={(e) => {
+                                  // Create a modal to view the image
+                                  const modal = document.createElement('div');
+                                  modal.className = 'fixed inset-0 bg-black/90 flex items-center justify-center z-[100] p-4';
+                                  modal.onclick = () => modal.remove();
+                                  
+                                  const img = document.createElement('img');
+                                  img.src = (viewingProject as any).newsPublicationImage;
+                                  img.className = 'max-w-full max-h-full object-contain';
+                                  img.onclick = (e) => e.stopPropagation();
+                                  
+                                  const closeBtn = document.createElement('button');
+                                  closeBtn.innerHTML = '×';
+                                  closeBtn.className = 'absolute top-4 right-4 text-white text-4xl font-bold hover:text-gray-300';
+                                  closeBtn.onclick = () => modal.remove();
+                                  
+                                  modal.appendChild(img);
+                                  modal.appendChild(closeBtn);
+                                  document.body.appendChild(modal);
+                                }}
+                              />
+                            </div>
+                            <div className="text-xs text-slate-500 mt-2 italic">Click image to view full size</div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {(viewingProject as any).newsTelecastingEnabled && (
+                      <div className="bg-white p-4 rounded-xl border border-purple-200">
+                        <div className="flex items-start gap-3">
+                          <div className="w-2 h-2 bg-purple-600 rounded-full mt-2"></div>
+                          <div className="flex-1">
+                            <div className="text-sm font-bold text-slate-700 mb-1">News Telecasting (+300 points)</div>
+                            {(viewingProject as any).newsTelecastingLink && (
+                              <a href={(viewingProject as any).newsTelecastingLink} target="_blank" rel="noopener noreferrer" className="text-xs text-purple-600 hover:underline flex items-center gap-1">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                </svg>
+                                View Telecast Link
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Additional Points Section */}
+              {(viewingProject.category === 'Community Service Avenue' || viewingProject.category === 'community_service' || viewingProject.category === 'Professional Service Avenue' || viewingProject.category === 'professional_service') && (
+                <div className="space-y-4">
+                  {/* Women Empowerment */}
+                  {(viewingProject as any).womenEmpowerment && (
+                    <div className="bg-pink-50 p-6 rounded-2xl border border-pink-200">
+                      <div className="flex items-center gap-3">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-pink-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                        <div>
+                          <div className="text-sm font-black text-slate-900">Women Empowerment Project</div>
+                          <div className="text-xs text-pink-600 font-bold">+400 points</div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Professional Service Specific - Mahadhan Project */}
+                  {(viewingProject.category === 'Professional Service Avenue' || viewingProject.category === 'professional_service') && (viewingProject as any).mahadhanProject && (
+                    <div className="bg-emerald-50 p-6 rounded-2xl border border-emerald-200">
+                      <div className="flex items-center gap-3">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                        <div>
+                          <div className="text-sm font-black text-slate-900">Organizing Mahadhan Project</div>
+                          <div className="text-xs text-emerald-600 font-bold">+700 points</div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Professional Service Specific - General Public Attendance */}
+                  {(viewingProject.category === 'Professional Service Avenue' || viewingProject.category === 'professional_service') && ((viewingProject as any).generalPublic100To300 || (viewingProject as any).generalPublic500Plus || (viewingProject as any).generalPublic1000Plus) && (
+                    <div className="bg-teal-50 p-6 rounded-2xl border border-teal-200">
+                      <div className="flex items-center gap-3">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-teal-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                        </svg>
+                        <div>
+                          <div className="text-sm font-black text-slate-900">General Public Attendance</div>
+                          <div className="text-xs text-teal-600 font-bold">
+                            {(viewingProject as any).generalPublic1000Plus && '+1000 points (Above 1000 attendees)'}
+                            {(viewingProject as any).generalPublic500Plus && '+700 points (Above 500 attendees)'}
+                            {(viewingProject as any).generalPublic100To300 && '+500 points (100-300 attendees)'}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="bg-slate-50 p-6 rounded-2xl">
+                <div className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">Description</div>
+                <p className="text-sm text-slate-700 leading-relaxed">{viewingProject.description}</p>
+              </div>
+
+              {viewingProject.photos && viewingProject.photos.length > 0 && (
+                <div className="bg-slate-50 p-6 rounded-2xl">
+                  <div className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Project Photos ({viewingProject.photos.length})</div>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    {viewingProject.photos.map((photo: any, index: number) => {
+                      // Handle different photo formats
+                      let photoSrc = '';
+                      if (typeof photo === 'string') {
+                        photoSrc = photo;
+                      } else if (photo instanceof File || photo instanceof Blob) {
+                        photoSrc = URL.createObjectURL(photo);
+                      }
+                      
+                      // Only render if photoSrc is not empty
+                      if (!photoSrc || photoSrc.trim() === '') {
+                        return null;
+                      }
+                      
+                      return (
+                        <div key={index} className="aspect-video bg-slate-200 rounded-xl overflow-hidden border-2 border-slate-300 hover:border-pink-500 transition-colors cursor-pointer">
+                          <img
+                            src={photoSrc}
+                            alt={`Project photo ${index + 1}`}
+                            className="w-full h-full object-cover hover:scale-105 transition-transform"
+                            onClick={() => window.open(photoSrc, '_blank')}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              <div className="bg-emerald-50 p-6 rounded-2xl border border-emerald-100">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-xs font-black text-emerald-700 uppercase tracking-widest mb-2">Points Status</div>
+                    <div className="text-3xl font-black text-emerald-700">
+                      {viewingProject.status === 'approved' ? viewingProject.totalPoints : 'Pending Approval'}
+                    </div>
+                  </div>
+                  <div className={`px-4 py-2 rounded-full text-xs font-black uppercase tracking-widest ${
+                    viewingProject.status === 'approved' ? 'bg-emerald-600 text-white' :
+                    viewingProject.status === 'pending' ? 'bg-orange-500 text-white' :
+                    'bg-red-500 text-white'
+                  }`}>
+                    {viewingProject.status}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setViewingProject(null)}
+              className="w-full mt-8 bg-slate-200 text-slate-700 py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-300 transition-all"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 const MeetingReportsTab: React.FC<MeetingReportsTabProps> = ({ selectedMonth, clubId }) => {
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -638,22 +1352,28 @@ const MeetingReportsTab: React.FC<MeetingReportsTabProps> = ({ selectedMonth, cl
                   {formData.photos.length} photo(s) selected
                 </div>
                 <div className="grid grid-cols-5 gap-2">
-                  {formData.photos.map((photo: any, index: number) => (
-                    <div key={index} className="relative aspect-square bg-slate-200 rounded-lg overflow-hidden border-2 border-slate-300">
-                      <img
-                        src={photo}
-                        alt={`Preview ${index + 1}`}
-                        className="w-full h-full object-cover"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setFormData({ ...formData, photos: formData.photos.filter((_: any, i: number) => i !== index) })}
-                        className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs hover:bg-red-600"
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))}
+                  {formData.photos.map((photo: any, index: number) => {
+                    // Only render if photo src is not empty
+                    if (!photo || (typeof photo === 'string' && photo.trim() === '')) {
+                      return null;
+                    }
+                    return (
+                      <div key={index} className="relative aspect-square bg-slate-200 rounded-lg overflow-hidden border-2 border-slate-300">
+                        <img
+                          src={photo}
+                          alt={`Preview ${index + 1}`}
+                          className="w-full h-full object-cover"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setFormData({ ...formData, photos: formData.photos.filter((_: any, i: number) => i !== index) })}
+                          className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs hover:bg-red-600"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -940,7 +1660,12 @@ const MeetingReportsTab: React.FC<MeetingReportsTabProps> = ({ selectedMonth, cl
                 <div className="bg-slate-50 p-6 rounded-2xl">
                   <div className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Meeting Photos ({viewingMeeting.photos.length})</div>
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                    {viewingMeeting.photos.map((photo: any, index: number) => (
+                    {viewingMeeting.photos.map((photo: any, index: number) => {
+                      // Only render if photo src is not empty
+                      if (!photo || (typeof photo === 'string' && photo.trim() === '')) {
+                        return null;
+                      }
+                      return (
                       <div key={index} className="aspect-video bg-slate-200 rounded-xl overflow-hidden border-2 border-slate-300 hover:border-blue-500 transition-colors cursor-pointer">
                         <img
                           src={photo}
@@ -949,7 +1674,8 @@ const MeetingReportsTab: React.FC<MeetingReportsTabProps> = ({ selectedMonth, cl
                           onClick={() => window.open(photo, '_blank')}
                         />
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -1096,99 +1822,7 @@ const Reporting: React.FC<ReportingProps> = ({ metrics, onUpdateMetrics, pointsE
             <MeetingReportsTab selectedMonth={selectedMonth} clubId={clubId} />
           )}
 
-          {activeTab === 'projects' && (
-            <div className="space-y-6">
-              <h3 className="text-xl font-black text-slate-900">Project Reports</h3>
-              <p className="text-sm text-slate-500">Submit details of projects conducted during {selectedMonth.name} {selectedMonth.year}</p>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="md:col-span-2">
-                  <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">
-                    Project Name
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Enter project name"
-                    className="w-full bg-slate-50 border border-slate-200 p-4 rounded-2xl outline-none focus:ring-2 focus:ring-pink-500/20 font-bold"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">
-                    Project Date
-                  </label>
-                  <input
-                    type="date"
-                    className="w-full bg-slate-50 border border-slate-200 p-4 rounded-2xl outline-none focus:ring-2 focus:ring-pink-500/20 font-bold"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">
-                    Avenue of Service
-                  </label>
-                  <select className="w-full bg-slate-50 border border-slate-200 p-4 rounded-2xl outline-none focus:ring-2 focus:ring-pink-500/20 font-bold">
-                    <option>Club Service</option>
-                    <option>Community Service</option>
-                    <option>Professional Development</option>
-                    <option>International Service</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">
-                    Service Hours
-                  </label>
-                  <input
-                    type="number"
-                    placeholder="Total hours"
-                    className="w-full bg-slate-50 border border-slate-200 p-4 rounded-2xl outline-none focus:ring-2 focus:ring-pink-500/20 font-bold"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">
-                    Lives Touched
-                  </label>
-                  <input
-                    type="number"
-                    placeholder="Beneficiaries count"
-                    className="w-full bg-slate-50 border border-slate-200 p-4 rounded-2xl outline-none focus:ring-2 focus:ring-pink-500/20 font-bold"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">
-                    Community Capital (₹)
-                  </label>
-                  <input
-                    type="number"
-                    placeholder="Funds utilized"
-                    className="w-full bg-slate-50 border border-slate-200 p-4 rounded-2xl outline-none focus:ring-2 focus:ring-pink-500/20 font-bold"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">
-                    Rotaracters Participated
-                  </label>
-                  <input
-                    type="number"
-                    placeholder="Number of members"
-                    className="w-full bg-slate-50 border border-slate-200 p-4 rounded-2xl outline-none focus:ring-2 focus:ring-pink-500/20 font-bold"
-                  />
-                </div>
-                <div className="md:col-span-2">
-                  <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">
-                    Project Description
-                  </label>
-                  <textarea
-                    rows={4}
-                    placeholder="Detailed description of the project..."
-                    className="w-full bg-slate-50 border border-slate-200 p-4 rounded-2xl outline-none focus:ring-2 focus:ring-pink-500/20 font-bold resize-none"
-                  />
-                </div>
-              </div>
-
-              <button className="w-full bg-[#D91B5C] text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg hover:scale-[1.01] transition-all">
-                Submit Project Report
-              </button>
-            </div>
-          )}
+          {activeTab === 'projects' && <ProjectReportsTab selectedMonth={selectedMonth} clubId={clubId} />}
 
           {activeTab === 'membership' && (
             <div className="space-y-6">

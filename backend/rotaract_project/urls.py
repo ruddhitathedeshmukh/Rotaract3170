@@ -28,7 +28,7 @@ urlpatterns = [
     path('api/login/', views.login, name='login'),
     path('api/notifications/<str:club_id>/', views.get_notifications, name='get_notifications'),
     path('api/notifications/<str:notification_id>/read/', views.mark_notification_read, name='mark_notification_read'),
-# Meeting endpoints - IMPORTANT: Specific paths must come BEFORE general paths with parameters
+    # Meeting endpoints - IMPORTANT: Specific paths must come BEFORE general paths with parameters
     path('api/meetings/create/', csrf_exempt(views.create_meeting), name='create_meeting'),
     path('api/meetings/pending/', views.get_pending_meetings, name='get_pending_meetings'),
     path('api/meetings/<str:meeting_id>/update/', csrf_exempt(views.update_meeting), name='update_meeting'),
@@ -36,5 +36,15 @@ urlpatterns = [
     path('api/meetings/<str:meeting_id>/approve/', csrf_exempt(views.approve_meeting), name='approve_meeting'),
     path('api/meetings/<str:meeting_id>/reject/', csrf_exempt(views.reject_meeting), name='reject_meeting'),
     path('api/meetings/<str:club_id>/', views.get_meetings, name='get_meetings'),
+    
+    # Project endpoints - IMPORTANT: Specific paths must come BEFORE general paths with parameters
+    path('api/projects/create/', csrf_exempt(views.create_project), name='create_project'),
+    path('api/projects/pending/', views.get_pending_projects, name='get_pending_projects'),
+    path('api/projects/<str:project_id>/update/', csrf_exempt(views.update_project), name='update_project'),
+    path('api/projects/<str:project_id>/delete/', csrf_exempt(views.delete_project), name='delete_project'),
+    path('api/projects/<str:project_id>/approve/', csrf_exempt(views.approve_project), name='approve_project'),
+    path('api/projects/<str:project_id>/reject/', csrf_exempt(views.reject_project), name='reject_project'),
+    path('api/projects/<str:club_id>/', views.get_projects, name='get_projects'),
+    
     path('api/notifications/create/', views.create_notification, name='create_notification'),
 ]

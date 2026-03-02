@@ -696,3 +696,370 @@ def get_pending_meetings(request):
         return JsonResponse(result, safe=False)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
+
+# Project endpoints
+@require_http_methods(["GET"])
+def get_projects(request, club_id):
+    """Get all projects for a club, optionally filtered by month and year"""
+    try:
+        from .models import Project
+        
+        month = request.GET.get('month')
+        year = request.GET.get('year')
+        
+        projects = Project.objects.filter(club_id=club_id)
+        
+        if month:
+            projects = projects.filter(month=month)
+        if year:
+            projects = projects.filter(year=int(year))
+        
+        result = []
+        for project in projects:
+            result.append({
+                'id': project.id,
+                'category': project.category,
+                'projectName': project.project_name,
+                'date': str(project.date),
+                'venue': project.venue,
+                'projectChair': project.project_chair,
+                'description': project.description,
+                # Community Service specific fields
+                'communityCapitalDeployed': project.community_capital_deployed,
+                'livesTouched': project.lives_touched,
+                'serviceHours': project.service_hours,
+                # Attendance
+                'attendance': {
+                    'clubRotaractors': project.club_rotaractors,
+                    'visitingRotaractors': project.visiting_rotaractors,
+                    'rotarians': project.rotarians,
+                    'interactors': project.interactors,
+                    'others': project.others,
+                },
+                'totalAttendance': project.total_attendance,
+                # News coverage
+                'newsPublicationEnabled': project.news_publication_enabled,
+                'newsPublicationImage': project.news_publication_image,
+                'newsPublicationLink': project.news_publication_link,
+                'newsTelecastingEnabled': project.news_telecasting_enabled,
+                'newsTelecastingLink': project.news_telecasting_link,
+                # Women empowerment
+                'womenEmpowerment': project.women_empowerment,
+                # Professional Service specific fields
+                'mahadhanProject': project.mahadhan_project,
+                'generalPublic100To300': project.general_public_100_300,
+                'generalPublic500Plus': project.general_public_500_plus,
+                'generalPublic1000Plus': project.general_public_1000_plus,
+                # Additional points
+                'additionalPoints': parse_json_field(project.additional_points_json, []),
+                'photos': parse_json_field(project.photos_json, []),
+                # Points breakdown
+                'basePoints': project.base_points,
+                'attendancePoints': project.attendance_points,
+                'additionalPointsValue': project.additional_points,
+                'newsPoints': project.news_points,
+                'womenEmpowermentPoints': project.women_empowerment_points,
+                'mahadhanPoints': project.mahadhan_points,
+                'generalPublicPoints': project.general_public_points,
+                'totalPoints': project.total_points,
+                # Status
+                'status': project.status,
+                'month': project.month,
+                'year': project.year,
+                'submittedAt': project.submitted_at.isoformat(),
+                'approvedAt': project.approved_at.isoformat() if project.approved_at else None,
+                'approvedBy': project.approved_by,
+                'rejectionReason': project.rejection_reason,
+            })
+        return JsonResponse(result, safe=False)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def create_project(request):
+    """Create a new project"""
+    try:
+        from .models import Project
+        
+        data = json.loads(request.body)
+        club_id = data.get('clubId')
+        
+        if not club_id:
+            return JsonResponse({'error': 'Club ID is required'}, status=400)
+        
+        try:
+            club = Club.objects.get(id=club_id)
+        except Club.DoesNotExist:
+            return JsonResponse({'error': 'Club not found'}, status=404)
+        
+        # Create project with 'pending' status
+        project = Project(
+            club=club,
+            category=data.get('category'),
+            project_name=data.get('projectName'),
+            date=data.get('date'),
+            venue=data.get('venue'),
+            project_chair=data.get('projectChair'),
+            description=data.get('description'),
+            # Community Service and Professional Service specific fields
+            community_capital_deployed=data.get('communityCapitalDeployed', '0'),
+            lives_touched=data.get('livesTouched', 0),
+            service_hours=data.get('serviceHours', 0),
+            # Attendance
+            club_rotaractors=data.get('attendance', {}).get('clubRotaractors', 0),
+            visiting_rotaractors=data.get('attendance', {}).get('visitingRotaractors', 0),
+            rotarians=data.get('attendance', {}).get('rotarians', 0),
+            interactors=data.get('attendance', {}).get('interactors', 0),
+            others=data.get('attendance', {}).get('others', 0),
+            # News coverage
+            news_publication_enabled=data.get('newsPublicationEnabled', False),
+            news_publication_image=data.get('newsPublicationImage', ''),
+            news_publication_link=data.get('newsPublicationLink', ''),
+            news_telecasting_enabled=data.get('newsTelecastingEnabled', False),
+            news_telecasting_link=data.get('newsTelecastingLink', ''),
+            # Women empowerment
+            women_empowerment=data.get('womenEmpowerment', False),
+            # Professional Service specific fields
+            mahadhan_project=data.get('mahadhanProject', False),
+            general_public_100_300=data.get('generalPublicAttendance') == '100-300',
+            general_public_500_plus=data.get('generalPublicAttendance') == '500+',
+            general_public_1000_plus=data.get('generalPublicAttendance') == '1000+',
+            # Additional points
+            additional_points_json=json.dumps(data.get('additionalPoints', [])),
+            additional_points=data.get('additionalPointsValue', 0),
+            # Photos
+            photos_json=json.dumps(data.get('photos', [])),
+            # Metadata
+            month=data.get('month'),
+            year=data.get('year'),
+            status='pending',
+        )
+        project.save()
+        
+        return JsonResponse({
+            'success': True,
+            'id': project.id,
+            'totalPoints': project.total_points,
+            'attendancePoints': project.attendance_points,
+            'newsPoints': project.news_points,
+            'womenEmpowermentPoints': project.women_empowerment_points,
+            'mahadhanPoints': project.mahadhan_points,
+            'generalPublicPoints': project.general_public_points,
+            'totalAttendance': project.total_attendance
+        })
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["PUT"])
+def update_project(request, project_id):
+    """Update an existing project"""
+    try:
+        from .models import Project
+        
+        data = json.loads(request.body)
+        
+        try:
+            project = Project.objects.get(id=project_id)
+        except Project.DoesNotExist:
+            return JsonResponse({'error': 'Project not found'}, status=404)
+        
+        # Prevent updates when project is already approved
+        if project.status == 'approved':
+            return JsonResponse({'error': 'Cannot update approved project. Contact admin for changes.'}, status=403)
+        
+        # Update fields
+        project.category = data.get('category', project.category)
+        project.project_name = data.get('projectName', project.project_name)
+        project.date = data.get('date', project.date)
+        project.venue = data.get('venue', project.venue)
+        project.project_chair = data.get('projectChair', project.project_chair)
+        project.description = data.get('description', project.description)
+        
+        if 'attendance' in data:
+            attendance = data['attendance']
+            project.club_rotaractors = attendance.get('clubRotaractors', project.club_rotaractors)
+            project.visiting_rotaractors = attendance.get('visitingRotaractors', project.visiting_rotaractors)
+            project.rotarians = attendance.get('rotarians', project.rotarians)
+            project.interactors = attendance.get('interactors', project.interactors)
+            project.others = attendance.get('others', project.others)
+        
+        if 'additionalPoints' in data:
+            project.additional_points_json = json.dumps(data['additionalPoints'])
+            project.additional_points = data.get('additionalPointsValue', 0)
+        
+        if 'photos' in data:
+            project.photos_json = json.dumps(data['photos'])
+        
+        project.save()
+        
+        return JsonResponse({
+            'success': True,
+            'totalPoints': project.total_points,
+            'totalAttendance': project.total_attendance
+        })
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+def delete_project(request, project_id):
+    """Delete a project"""
+    try:
+        from .models import Project
+        
+        project = Project.objects.get(id=project_id)
+        
+        # Prevent deletion when project is already approved
+        if project.status == 'approved':
+            return JsonResponse({'error': 'Cannot delete approved project. Contact admin for changes.'}, status=403)
+        
+        project.delete()
+        return JsonResponse({'success': True})
+    except Project.DoesNotExist:
+        return JsonResponse({'error': 'Project not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def approve_project(request, project_id):
+    """Approve a project (admin only)"""
+    try:
+        from .models import Project
+        from datetime import datetime
+        
+        data = json.loads(request.body)
+        approved_by = data.get('approvedBy', 'admin')
+        
+        try:
+            project = Project.objects.get(id=project_id)
+        except Project.DoesNotExist:
+            return JsonResponse({'error': 'Project not found'}, status=404)
+        
+        project.status = 'approved'
+        project.approved_at = datetime.now()
+        project.approved_by = approved_by
+        project.save()
+        
+        # Update club's total points and Community Service metrics
+        club = project.club
+        metrics = parse_json_field(club.metrics_json, {})
+        
+        # Update total points
+        current_points = int(re.sub(r'[,]', '', str(metrics.get('totalPoints', '0'))))
+        new_points = current_points + project.total_points
+        metrics['totalPoints'] = str(new_points)
+        
+        # Update Community Service specific metrics if this is a community service project
+        if project.category == 'community_service':
+            # Update community capital deployed
+            current_capital = int(re.sub(r'[₹,]', '', str(metrics.get('communityCapital', '0'))))
+            project_capital = int(re.sub(r'[₹,]', '', str(project.community_capital_deployed)))
+            new_capital = current_capital + project_capital
+            metrics['communityCapital'] = str(new_capital)
+            
+            # Update lives touched
+            current_lives = int(str(metrics.get('livesTouched', '0')))
+            new_lives = current_lives + project.lives_touched
+            metrics['livesTouched'] = str(new_lives)
+            
+            # Update service hours
+            current_hours = int(str(metrics.get('serviceHours', '0')))
+            new_hours = current_hours + project.service_hours
+            metrics['serviceHours'] = str(new_hours)
+        
+        club.metrics_json = json.dumps(metrics)
+        club.save()
+        
+        # Create notification for the club
+        notification = Notification(
+            club=club,
+            title='Project Approved',
+            message=f'Your project "{project.project_name}" has been approved. {project.total_points} points added to your club.',
+            type='success'
+        )
+        notification.save()
+        
+        return JsonResponse({'success': True, 'points': project.total_points})
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def reject_project(request, project_id):
+    """Reject a project (admin only)"""
+    try:
+        from .models import Project
+        
+        data = json.loads(request.body)
+        reason = data.get('reason', 'No reason provided')
+        
+        try:
+            project = Project.objects.get(id=project_id)
+        except Project.DoesNotExist:
+            return JsonResponse({'error': 'Project not found'}, status=404)
+        
+        project.status = 'rejected'
+        project.rejection_reason = reason
+        project.save()
+        
+        # Create notification for the club
+        notification = Notification(
+            club=project.club,
+            title='Project Rejected',
+            message=f'Your project "{project.project_name}" has been rejected. Reason: {reason}',
+            type='error'
+        )
+        notification.save()
+        
+        return JsonResponse({'success': True})
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@require_http_methods(["GET"])
+def get_pending_projects(request):
+    """Get all pending projects for admin approval"""
+    try:
+        from .models import Project
+        
+        projects = Project.objects.filter(status='pending')
+        result = []
+        
+        for project in projects:
+            result.append({
+                'id': project.id,
+                'clubId': project.club.id,
+                'clubName': project.club.name,
+                'category': project.category,
+                'projectName': project.project_name,
+                'date': str(project.date),
+                'venue': project.venue,
+                'projectChair': project.project_chair,
+                'description': project.description,
+                'totalAttendance': project.total_attendance,
+                'totalPoints': project.total_points,
+                'month': project.month,
+                'year': project.year,
+                'submittedAt': project.submitted_at.isoformat(),
+                'photos': parse_json_field(project.photos_json, []),
+            })
+        
+        return JsonResponse(result, safe=False)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)

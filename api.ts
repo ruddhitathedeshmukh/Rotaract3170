@@ -214,4 +214,72 @@ export class DistrictAPI {
     });
     await this.handleResponse(response);
   }
+
+  // Project API methods
+  static async getProjects(clubId: string, month?: string, year?: number): Promise<any[]> {
+    let url = `${API_BASE_URL}/projects/${clubId}/`;
+    const params = new URLSearchParams();
+    if (month) params.append('month', month);
+    if (year) params.append('year', year.toString());
+    if (params.toString()) url += `?${params.toString()}`;
+    
+    const response = await fetch(url);
+    return this.handleResponse(response);
+  }
+
+  static async createProject(projectData: any): Promise<any> {
+    const response = await fetch(`${API_BASE_URL}/projects/create/`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(projectData),
+      credentials: 'include'
+    });
+    return this.handleResponse(response);
+  }
+
+  static async updateProject(projectId: string, projectData: any): Promise<any> {
+    const response = await fetch(`${API_BASE_URL}/projects/${projectId}/update/`, {
+      method: 'PUT',
+      headers: this.getHeaders(),
+      body: JSON.stringify(projectData),
+      credentials: 'include'
+    });
+    return this.handleResponse(response);
+  }
+
+  static async deleteProject(projectId: string): Promise<void> {
+    const response = await fetch(`${API_BASE_URL}/projects/${projectId}/delete/`, {
+      method: 'DELETE',
+      headers: this.getHeaders(),
+      credentials: 'include'
+    });
+    await this.handleResponse(response);
+  }
+
+  static async getPendingProjects(): Promise<any[]> {
+    const response = await fetch(`${API_BASE_URL}/projects/pending/`, {
+      credentials: 'include'
+    });
+    return this.handleResponse(response);
+  }
+
+  static async approveProject(projectId: string, approvedBy: string): Promise<any> {
+    const response = await fetch(`${API_BASE_URL}/projects/${projectId}/approve/`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify({ approvedBy }),
+      credentials: 'include'
+    });
+    return this.handleResponse(response);
+  }
+
+  static async rejectProject(projectId: string, reason: string): Promise<void> {
+    const response = await fetch(`${API_BASE_URL}/projects/${projectId}/reject/`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify({ reason }),
+      credentials: 'include'
+    });
+    await this.handleResponse(response);
+  }
 }

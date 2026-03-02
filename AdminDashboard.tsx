@@ -19,6 +19,24 @@ type Meeting = {
   photos?: string[];
 };
 
+type Project = {
+  id: string;
+  clubId: string;
+  clubName: string;
+  projectName: string;
+  category: string;
+  date: string;
+  venue: string;
+  projectChair: string;
+  description: string;
+  totalAttendance: number;
+  totalPoints: number;
+  month: string;
+  year: number;
+  submittedAt: string;
+  photos?: string[];
+};
+
 const LOGO_PLACEHOLDER = `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 24 24" fill="none" stroke="%23cbd5e1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M3 7v1a3 3 0 0 0 6 0V7m0 1a3 3 0 0 0 6 0V7m0 1a3 3 0 0 0 6 0V7H3l2-4h14l2 4"/><path d="M5 21V10.85"/><path d="M19 21V10.85"/><path d="M9 21v-4a3 3 0 0 1 6 0v4"/></svg>')}`;
 
 const getDirectDriveUrl = (url: string) => {
@@ -78,6 +96,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, clubs, onAddClub,
   const [showMeetingsPanel, setShowMeetingsPanel] = useState(false);
   const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
+  
+  // Project approval states
+  const [pendingProjects, setPendingProjects] = useState<Project[]>([]);
+  const [showProjectsPanel, setShowProjectsPanel] = useState(false);
+  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [projectRejectionReason, setProjectRejectionReason] = useState('');
   
   const initialFormState: Partial<Club> = {
     name: '', username: '', password: '', zone: 'Zone 1',
@@ -313,7 +337,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, clubs, onAddClub,
     e.target.value = '';
   };
 
-  // Fetch pending meetings
+  // Fetch pending meetings and projects
   useEffect(() => {
     const fetchPendingMeetings = async () => {
       try {
@@ -326,10 +350,26 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, clubs, onAddClub,
         console.error('Error fetching pending meetings:', error);
       }
     };
+
+    const fetchPendingProjects = async () => {
+      try {
+        const response = await fetch('http://localhost:8000/api/projects/pending/');
+        if (response.ok) {
+          const data = await response.json();
+          setPendingProjects(data);
+        }
+      } catch (error) {
+        console.error('Error fetching pending projects:', error);
+      }
+    };
     
     fetchPendingMeetings();
+    fetchPendingProjects();
     // Refresh every 30 seconds
-    const interval = setInterval(fetchPendingMeetings, 30000);
+    const interval = setInterval(() => {
+      fetchPendingMeetings();
+      fetchPendingProjects();
+    }, 30000);
     return () => clearInterval(interval);
   }, []);
 
@@ -377,6 +417,50 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, clubs, onAddClub,
     }
   };
 
+  const handleApproveProject = async (projectId: string) => {
+    try {
+      const response = await fetch(`http://localhost:8000/api/projects/${projectId}/approve/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ approvedBy: 'admin' })
+      });
+      
+      if (response.ok) {
+        setPendingProjects(pendingProjects.filter(p => p.id !== projectId));
+        setSelectedProject(null);
+        alert('Project approved successfully! Points have been added to the club.');
+      }
+    } catch (error) {
+      console.error('Error approving project:', error);
+      alert('Failed to approve project');
+    }
+  };
+
+  const handleRejectProject = async (projectId: string) => {
+    if (!projectRejectionReason.trim()) {
+      alert('Please provide a rejection reason');
+      return;
+    }
+    
+    try {
+      const response = await fetch(`http://localhost:8000/api/projects/${projectId}/reject/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: projectRejectionReason })
+      });
+      
+      if (response.ok) {
+        setPendingProjects(pendingProjects.filter(p => p.id !== projectId));
+        setSelectedProject(null);
+        setProjectRejectionReason('');
+        alert('Project rejected. Club has been notified.');
+      }
+    } catch (error) {
+      console.error('Error rejecting project:', error);
+      alert('Failed to reject project');
+    }
+  };
+
   return (
     <div className="flex flex-col h-screen bg-slate-50">
       <header className="bg-white border-b px-8 py-4 flex items-center justify-between shadow-sm z-10 sticky top-0">
@@ -407,6 +491,17 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, clubs, onAddClub,
             {pendingMeetings.length > 0 && (
               <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[8px] font-black rounded-full w-5 h-5 flex items-center justify-center">
                 {pendingMeetings.length}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setShowProjectsPanel(!showProjectsPanel)}
+            className="relative bg-purple-600 text-white px-6 py-2.5 rounded-xl text-[10px] uppercase font-black shadow-lg shadow-purple-200 hover:scale-105 transition-all"
+          >
+            Pending Projects
+            {pendingProjects.length > 0 && (
+              <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[8px] font-black rounded-full w-5 h-5 flex items-center justify-center">
+                {pendingProjects.length}
               </span>
             )}
           </button>
@@ -774,6 +869,171 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, clubs, onAddClub,
                             className="flex-1 bg-red-600 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg hover:bg-red-700 transition-all"
                           >
                             ✗ Reject Meeting
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Pending Projects Panel */}
+      {showProjectsPanel && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white w-full max-w-6xl rounded-[3.5rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="px-10 py-8 bg-purple-50 border-b flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-black text-slate-900 leading-none">Pending Project Approvals</h2>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-2">
+                  {pendingProjects.length} project{pendingProjects.length !== 1 ? 's' : ''} awaiting review
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowProjectsPanel(false);
+                  setSelectedProject(null);
+                  setProjectRejectionReason('');
+                }}
+                className="text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-10">
+              {pendingProjects.length === 0 ? (
+                <div className="text-center py-20">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-20 w-20 mx-auto text-slate-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <p className="text-slate-400 font-bold text-lg">No pending projects</p>
+                  <p className="text-sm text-slate-400 mt-2">All projects have been reviewed</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-6">
+                  {pendingProjects.map((project) => (
+                    <div key={project.id} className="bg-slate-50 p-8 rounded-[2.5rem] border border-slate-200 hover:shadow-lg transition-all">
+                      <div className="flex items-start justify-between mb-6">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <h3 className="text-xl font-black text-slate-900">{project.clubName}</h3>
+                            <span className="px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest bg-pink-100 text-pink-700">
+                              {project.category}
+                            </span>
+                          </div>
+                          <p className="text-sm text-slate-500 font-bold">
+                            {project.projectName} • {new Date(project.date).toLocaleDateString('en-GB', { 
+                              day: '2-digit', 
+                              month: 'short', 
+                              year: 'numeric' 
+                            })}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-2xl font-black text-purple-600">{project.totalPoints}</div>
+                          <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Points</div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                        <div className="bg-white p-4 rounded-xl">
+                          <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Venue</div>
+                          <div className="text-sm font-bold text-slate-700">{project.venue}</div>
+                        </div>
+                        <div className="bg-white p-4 rounded-xl">
+                          <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Project Chair</div>
+                          <div className="text-sm font-bold text-slate-700">{project.projectChair}</div>
+                        </div>
+                        <div className="bg-white p-4 rounded-xl">
+                          <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Attendance</div>
+                          <div className="text-sm font-bold text-slate-700">{project.totalAttendance}</div>
+                        </div>
+                        <div className="bg-white p-4 rounded-xl">
+                          <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Submitted</div>
+                          <div className="text-xs font-bold text-slate-500">
+                            {new Date(project.submittedAt).toLocaleDateString('en-GB', {
+                              day: '2-digit',
+                              month: 'short'
+                            })}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="bg-white p-4 rounded-xl mb-6">
+                        <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Description</div>
+                        <p className="text-sm text-slate-600 leading-relaxed">{project.description}</p>
+                      </div>
+
+                      {project.photos && project.photos.length > 0 && (
+                        <div className="bg-white p-4 rounded-2xl border border-slate-200 mb-6">
+                          <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">Project Photos</div>
+                          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                            {project.photos.map((photo: string, index: number) => (
+                              <div key={index} className="aspect-video bg-slate-100 rounded-xl overflow-hidden border border-slate-200">
+                                <img
+                                  src={photo}
+                                  alt={`Project photo ${index + 1}`}
+                                  className="w-full h-full object-cover hover:scale-105 transition-transform cursor-pointer"
+                                  onClick={() => window.open(photo, '_blank')}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {selectedProject?.id === project.id ? (
+                        <div className="space-y-4">
+                          <textarea
+                            placeholder="Enter rejection reason (required for rejection)..."
+                            value={projectRejectionReason}
+                            onChange={(e) => setProjectRejectionReason(e.target.value)}
+                            rows={3}
+                            className="w-full bg-white border border-slate-200 p-4 rounded-2xl outline-none focus:ring-2 focus:ring-red-500/20 font-bold resize-none text-sm"
+                          />
+                          <div className="flex gap-3">
+                            <button
+                              onClick={() => handleApproveProject(project.id)}
+                              className="flex-1 bg-purple-600 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg hover:bg-purple-700 transition-all"
+                            >
+                              ✓ Approve & Add {project.totalPoints} Points
+                            </button>
+                            <button
+                              onClick={() => handleRejectProject(project.id)}
+                              className="flex-1 bg-red-600 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg hover:bg-red-700 transition-all"
+                            >
+                              ✗ Reject Project
+                            </button>
+                            <button
+                              onClick={() => {
+                                setSelectedProject(null);
+                                setProjectRejectionReason('');
+                              }}
+                              className="px-6 bg-slate-200 text-slate-600 py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-300 transition-all"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex gap-3">
+                          <button
+                            onClick={() => handleApproveProject(project.id)}
+                            className="flex-1 bg-purple-600 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg hover:bg-purple-700 transition-all"
+                          >
+                            ✓ Approve Project
+                          </button>
+                          <button
+                            onClick={() => setSelectedProject(project)}
+                            className="flex-1 bg-red-600 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg hover:bg-red-700 transition-all"
+                          >
+                            ✗ Reject Project
                           </button>
                         </div>
                       )}
