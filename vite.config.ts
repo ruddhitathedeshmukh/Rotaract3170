@@ -12,7 +12,8 @@ export default defineConfig(({ mode }) => {
 
             // ⭐ Add this part for ngrok
             allowedHosts: [
-                ".ngrok-free.app"   // Allows any ngrok public URL
+                ".ngrok-free.app" ,  // Allows any ngrok public URL
+                "rotaract3170.onrender.com"
             ],
         },
 
